@@ -1,14 +1,28 @@
 [tool.poetry]
 name = "NiaARM-GUI"
 version = "0.1.0"
-description = ""
-authors = ["firefly-cpp <iztok@iztok-jr-fister.eu>"]
+description = "Graphical user interface for numerical association rule mining"
+authors = ["Dario Zadravec <dario.zadravec@student.um.si>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "niaarm_gui"}]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
+PyQt6 = "^6.8.1"
+niaarm = "^0.4.5"
+niapy = "^2.6.1"
+pandas = "^2.2.3"
+matplotlib = "^3.10.3"
+plotly = "^5.24.1"
 
-[tool.poetry.dev-dependencies]
-pytest = "^5.2"
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+black = "^23.0.0"
+flake8 = "^6.0.0"
+
+[tool.poetry.scripts]
+niaarm-gui = "niaarm_gui.main:main"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
