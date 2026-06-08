@@ -6,7 +6,7 @@ A graphical user interface for numerical association rule mining using the NiaAR
 
 This GUI was developed as part of a diploma thesis at the Faculty of Electrical Engineering and Computer Science, University of Maribor.
 
-**Author:** Dario Zadravec
+**Author:** Dario Zadravec  
 **Supervisors:** Iztok Fister Jr.; Tilen Hliš  
 **Year:** 2026
 
