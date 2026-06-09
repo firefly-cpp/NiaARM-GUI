@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QFrame, QGroupBox, QGridLayout, QCheckBox, QMainWindow, QFileDialog)
 import pandas as pd
 import csv
+import openpyxl
 from niaarm import RuleList
 from niaarm.visualize import scatter_plot, grouped_matrix_plot, two_key_plot
 from niaarm_gui.antecedent_consequent_display import clean_rule_text
@@ -110,6 +111,11 @@ class MiningResultsViewer(QMainWindow):
         save_as_action = QAction("Save As...", self)
         save_as_action.triggered.connect(self.__save_file_as)
         file_menu.addAction(save_as_action)
+
+        # Export to Excel action
+        export_excel_action = QAction("Export to Excel", self)
+        export_excel_action.triggered.connect(self.__export_to_excel)
+        file_menu.addAction(export_excel_action)
 
         file_menu.addSeparator()
 
@@ -316,6 +322,13 @@ class MiningResultsViewer(QMainWindow):
     def __save_to_csv(self, file_path):
         """Saves current sorted rules that are visible in the table at the time of saving"""
         sorted_rules = self.__get_current_sorted_rules()
+        num_rules = len(sorted_rules)
+
+        progress = None
+        if num_rules > 1000:
+            progress = ProgressDialog("Saving rules to CSV...", num_rules)
+            progress.setValue(0)
+            progress.show()
 
         try:
             with open(file_path, "w", newline="", encoding="utf-8") as f:
@@ -328,26 +341,90 @@ class MiningResultsViewer(QMainWindow):
                     "inclusion", "amplitude"
                 ])
 
-                for rule in sorted_rules:
+                for i, rule in enumerate(sorted_rules):
                     writer.writerow([
-                        rule.antecedent,
-                        rule.consequent,
-                        rule.fitness,
-                        rule.num_transactions,
-                        rule.antecedent_count,
-                        rule.consequent_count,
-                        rule.full_count,
-                        rule.ant_not_con,
-                        rule.con_not_ant,
-                        rule.not_ant_not_con,
-                        rule.inclusion,
-                        rule.amplitude
+                        rule.antecedent, rule.consequent, rule.fitness,
+                        rule.num_transactions, rule.antecedent_count,
+                        rule.consequent_count, rule.full_count,
+                        rule.ant_not_con, rule.con_not_ant,
+                        rule.not_ant_not_con, rule.inclusion, rule.amplitude
                     ])
 
-            QMessageBox.information(self, "Success", f"Results saved to:\n{file_path}")
+                    if progress:
+                        progress.setValue(i)
+                        if progress.wasCanceled():
+                            return
+
+                if progress:
+                    progress.setValue(num_rules)
+                    progress.close()
+
+                QMessageBox.information(self, "Success", f"Results saved to:\n{file_path}")
 
         except Exception as e:
+            if progress:
+                progress.close()
             QMessageBox.critical(self, "Error", f"Failed to save file:\n{str(e)}")
+
+    def __export_to_excel(self):
+        file_name, _ = QFileDialog.getSaveFileName(
+        self, "Export to Excel", "", "Excel Files (*.xlsx);;All Files (*)")
+
+        if not file_name:
+            return
+        if not file_name.endswith(".xlsx"):
+            file_name += ".xlsx"
+
+        sorted_rules = self.__get_current_sorted_rules()
+        num_rules = len(sorted_rules)
+
+        progress = None
+        if num_rules > 1000:
+            progress = ProgressDialog("Exporting rules to Excel...", num_rules)
+            progress.setValue(0)
+            progress.show()
+
+        try:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+
+            headers = [
+                "Antecedent", "Consequent", "Fitness", "Support", "Confidence",
+                "Lift", "Coverage", "RHS Support", "Conviction", "Amplitude",
+                "Inclusion", "Interestingness", "Comprehensibility",
+                "Netconf", "Yule's Q", "Zhang"
+            ]
+            ws.append(headers)
+
+            for i, rule in enumerate(sorted_rules):
+                ws.append([
+                    clean_rule_text(str(rule.antecedent)),
+                    clean_rule_text(str(rule.consequent)),
+                    rule.fitness, rule.support, rule.confidence,
+                    rule.lift, rule.coverage, rule.rhs_support,
+                    rule.conviction, rule.amplitude, rule.inclusion,
+                    rule.interestingness, rule.comprehensibility,
+                    rule.netconf, rule.yulesq, rule.zhang
+                ])
+
+                if progress:
+                    progress.setValue(i)
+                    if progress.wasCanceled():
+                        return
+
+            wb.save(file_name)
+
+            if progress:
+                progress.setValue(num_rules)
+                progress.close()
+
+            self.statusBar().showMessage(f"Exported to Excel: {file_name}", 5000)
+            QMessageBox.information(self, "Success", f"Results exported to:\n{file_name}")
+
+        except Exception as e:
+            if progress:
+                progress.close()
+            QMessageBox.critical(self, "Error", f"Failed to export to Excel:\n{str(e)}")
 
     def __filter_rules(self):
         """Filters rules in the table with metrics thresholds selected in FilterDialog"""
