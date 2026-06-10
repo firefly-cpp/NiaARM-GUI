@@ -1,11 +1,11 @@
 import os
 import csv
+import json
 import pandas as pd
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QPushButton,
-    QFileDialog, QSlider, QCheckBox, QTableWidget, QTableWidgetItem, QScrollArea, QMessageBox, QFrame, QTextEdit,
-    QDialog, QStyle)
+    QFileDialog, QSlider, QCheckBox, QTableWidget, QTableWidgetItem, QScrollArea, QMessageBox, QFrame)
 from PyQt6.QtCore import Qt, QEvent, QObject, QThread, pyqtSignal
 from niaarm import Dataset, get_rules, squash
 from niapy.algorithms.basic import (
@@ -409,6 +409,14 @@ class NiaARMGUI(QMainWindow):
 
         file_menu.addSeparator()
 
+        export_pipeline_action = file_menu.addAction("Export Mining Pipeline")
+        export_pipeline_action.triggered.connect(self.__export_pipeline)
+
+        import_pipeline_action = file_menu.addAction("Import Mining Pipeline")
+        import_pipeline_action.triggered.connect(self.__import_pipeline)
+
+        file_menu.addSeparator()
+
         exit_action = file_menu.addAction("Exit")
         exit_action.setShortcut("Ctrl+W")
         exit_action.triggered.connect(self.close)
@@ -579,6 +587,164 @@ class NiaARMGUI(QMainWindow):
             viewer.showMaximized()
 
         self.statusBar().showMessage(f"NiaARM GUI v1.0")
+
+    def __export_pipeline(self):
+        """Exports current mining configuration to a JSON file"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Mining Pipeline", "", "JSON Files (*.json);;All Files (*)")
+
+        if not file_path:
+            return
+        if not file_path.endswith(".json"):
+            file_path += ".json"
+
+        algo_name = self.algorithm_combo.currentText()
+
+        algo_params = {}
+        if algo_name == "Differential Evolution":
+            algo_params = {
+                "differential_weight": self.diff_slider.value() / 100,
+                "crossover_probability": self.crossover_slider.value() / 100
+            }
+        elif algo_name == "Particle Swarm Optimization":
+            algo_params = {
+                "c1": self.c1_slider.value() / 100,
+                "c2": self.c2_slider.value() / 100,
+                "w": self.w_slider.value() / 100,
+                "min_velocity": self.min_velocity_slider.value() / 100,
+                "max_velocity": self.max_velocity_slider.value() / 100
+            }
+        elif algo_name == "Genetic Algorithm":
+            algo_params = {
+                "crossover_rate": self.ga_crossover_slider.value() / 100,
+                "mutation_rate": self.ga_mutation_slider.value() / 100
+            }
+        elif algo_name == "Bat Algorithm":
+            algo_params = {
+                "loudness": self.loud_slider.value() / 100,
+                "pulse_rate": self.pulse_slider.value() / 100,
+                "alpha": self.ba_alpha_slider.value() / 100,
+                "gamma": self.ba_gamma_slider.value() / 100,
+                "min_frequency": self.fmin_slider.value() / 100,
+                "max_frequency": self.fmax_slider.value() / 100
+            }
+        elif algo_name == "Firefly Algorithm":
+            algo_params = {
+                "alpha": self.fa_alpha_slider.value() / 100,
+                "beta0": self.beta_slider.value() / 100,
+                "gamma": self.fa_gamma_slider.value() / 100,
+                "theta": self.theta_slider.value() / 100
+            }
+
+        pipeline = {
+            "version": "1.0",
+            "dataset": {
+                "path": self.csv_input.text()
+            },
+            "data_squashing": {
+                "enabled": self.data_squash_combo.currentText() == "Yes",
+                "similarity": self.similarity_combo.currentText(),
+                "threshold": float(self.ds_threshold_value_label.text())
+            },
+            "metrics": {
+                metric: {
+                    "enabled": check.isChecked(),
+                    "weight": slider.value() / 100
+                }
+                for metric, (check, slider, _) in self.metric_sliders.items()
+            },
+            "algorithm": {
+                "name": algo_name,
+                "population_size": int(self.pop_size_input.text()),
+                "max_iterations": int(self.max_iter_input.text()),
+                "parameters": algo_params
+            }
+        }
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(pipeline, f, indent=4)
+            self.statusBar().showMessage(f"Pipeline exported: {file_path}", 5000)
+            QMessageBox.information(self, "Success", f"Pipeline saved to:\n{file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to export pipeline:\n{str(e)}")
+
+    def __import_pipeline(self):
+        """Imports mining configuration from a JSON file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Import Mining Pipeline", "", "JSON Files (*.json);;All Files (*)")
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                pipeline = json.load(f)
+
+            # Dataset
+            csv_path = pipeline.get("dataset", {}).get("path", "")
+            if csv_path and os.path.exists(csv_path):
+                self.csv_input.setText(csv_path)
+            elif csv_path:
+                QMessageBox.warning(
+                    self, "Warning",
+                    f"Dataset file not found:\n{csv_path}\n\n"
+                    "All other settings will be applied."
+                )
+
+            # Data squashing
+            ds = pipeline.get("data_squashing", {})
+            self.data_squash_combo.setCurrentText("Yes" if ds.get("enabled") else "No")
+            self.similarity_combo.setCurrentText(ds.get("similarity", "Euclidean"))
+            threshold = ds.get("threshold", 0.5)
+            pos = self.__threshold_to_slider(threshold)
+            self.ds_threshold_slider.setValue(pos)
+
+            # Metrics
+            for metric, values in pipeline.get("metrics", {}).items():
+                if metric in self.metric_sliders:
+                    check, slider, _ = self.metric_sliders[metric]
+                    check.setChecked(values.get("enabled", False))
+                    slider.setValue(int(values.get("weight", 0.5) * 100))
+
+            # Algorithm
+            algo = pipeline.get("algorithm", {})
+            self.algorithm_combo.setCurrentText(algo.get("name", "Select Algorithm"))
+            self.pop_size_input.setText(str(algo.get("population_size", 50)))
+            self.max_iter_input.setText(str(algo.get("max_iterations", 100)))
+
+            params = algo.get("parameters", {})
+            algo_name = algo.get("name", "")
+
+            if algo_name == "Differential Evolution":
+                self.diff_slider.setValue(int(params.get("differential_weight", 0.5) * 100))
+                self.crossover_slider.setValue(int(params.get("crossover_probability", 0.9) * 100))
+            elif algo_name == "Particle Swarm Optimization":
+                self.c1_slider.setValue(int(params.get("c1", 2.0) * 100))
+                self.c2_slider.setValue(int(params.get("c2", 2.0) * 100))
+                self.w_slider.setValue(int(params.get("w", 0.7) * 100))
+                self.min_velocity_slider.setValue(int(params.get("min_velocity", -1.5) * 100))
+                self.max_velocity_slider.setValue(int(params.get("max_velocity", 1.5) * 100))
+            elif algo_name == "Genetic Algorithm":
+                self.ga_crossover_slider.setValue(int(params.get("crossover_rate", 0.25) * 100))
+                self.ga_mutation_slider.setValue(int(params.get("mutation_rate", 0.25) * 100))
+            elif algo_name == "Bat Algorithm":
+                self.loud_slider.setValue(int(params.get("loudness", 1.0) * 100))
+                self.pulse_slider.setValue(int(params.get("pulse_rate", 1.0) * 100))
+                self.ba_alpha_slider.setValue(int(params.get("alpha", 0.97) * 100))
+                self.ba_gamma_slider.setValue(int(params.get("gamma", 0.1) * 100))
+                self.fmin_slider.setValue(int(params.get("min_frequency", 0.0) * 100))
+                self.fmax_slider.setValue(int(params.get("max_frequency", 2.0) * 100))
+            elif algo_name == "Firefly Algorithm":
+                self.fa_alpha_slider.setValue(int(params.get("alpha", 1.0) * 100))
+                self.beta_slider.setValue(int(params.get("beta0", 1.0) * 100))
+                self.fa_gamma_slider.setValue(int(params.get("gamma", 0.01) * 100))
+                self.theta_slider.setValue(int(params.get("theta", 0.97) * 100))
+
+            self.statusBar().showMessage(f"Pipeline imported: {file_path}", 5000)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to import pipeline:\n{str(e)}")
 
     def __show_license_dialog(self):
         QMessageBox.information(
@@ -774,6 +940,25 @@ class NiaARMGUI(QMainWindow):
             decimals = pos - 99  # 3, 4, 5
             value = round(1 - 10 ** (-decimals), decimals)  # 0.999, 0.9999, 0.99999
         return value, decimals
+
+    def __threshold_to_slider(self, value: float) -> int:
+        """Converts threshold value back to slider position"""
+        if value <= 0.001:
+            return max(0, round(value * 100000) - 1)
+        elif value < 0.01:
+            return 1
+        elif value == 0.001:
+            return 2
+        elif value <= 0.99:
+            return round(value * 100) + 2
+        elif value >= 0.99999:
+            return 104
+        elif value >= 0.9999:
+            return 103
+        elif value >= 0.999:
+            return 102
+        else:
+            return 101
 
     def __set_data_squashing_settings_visibility(self, value):
         self.similarity_label.setVisible(value)
