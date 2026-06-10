@@ -1,18 +1,18 @@
-import math
 import os
 import csv
 import pandas as pd
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QPushButton,
-    QFileDialog, QSlider, QCheckBox, QTableWidget, QTableWidgetItem, QScrollArea, QMessageBox, QFrame)
+    QFileDialog, QSlider, QCheckBox, QTableWidget, QTableWidgetItem, QScrollArea, QMessageBox, QFrame, QTextEdit,
+    QDialog, QStyle)
 from PyQt6.QtCore import Qt, QEvent, QObject, QThread, pyqtSignal
 from niaarm import Dataset, get_rules, squash
 from niapy.algorithms.basic import (
     DifferentialEvolution, ParticleSwarmOptimization, GeneticAlgorithm, FireflyAlgorithm, BatAlgorithm)
 from niaarm_gui.csv_viewer import CsvEditorWindow
 from niaarm_gui.mining_results_viewer import MiningResultsViewer
-from niaarm_gui.dialogs import LoadingDialog
+from niaarm_gui.dialogs import LoadingDialog, DatasetInfoDialog
 from niaarm_gui.models import StrictIntValidator
 
 
@@ -67,6 +67,16 @@ class NiaARMGUI(QMainWindow):
         """)
         self.csv_view_button.clicked.connect(self.__view_csv)
         csv_hbox.addWidget(self.csv_view_button)
+
+        self.csv_info_button = QPushButton()
+        self.csv_info_button.setIcon(QIcon("niaarm_gui/resources/info.png"))
+        self.csv_info_button.setToolTip("Dataset Info")
+        self.csv_info_button.setStyleSheet("""
+            QPushButton { background-color: #3498db; color: white; padding: 5px; border-radius: 3px; }
+            QPushButton:hover { background-color: #2980b9; }
+        """)
+        self.csv_info_button.clicked.connect(self.__show_dataset_info)
+        csv_hbox.addWidget(self.csv_info_button)
 
         csv_group.setLayout(csv_hbox)
         layout.addWidget(csv_group)
@@ -394,11 +404,13 @@ class NiaARMGUI(QMainWindow):
         file_menu = menu_bar.addMenu("File")
 
         open_results_action = file_menu.addAction("Open saved results")
+        open_results_action.setShortcut("Ctrl+O")
         open_results_action.triggered.connect(self.__open_saved_results)
 
         file_menu.addSeparator()
 
         exit_action = file_menu.addAction("Exit")
+        exit_action.setShortcut("Ctrl+W")
         exit_action.triggered.connect(self.close)
 
         help_menu = menu_bar.addMenu("Help")
@@ -688,7 +700,7 @@ class NiaARMGUI(QMainWindow):
         csv_path = self.csv_input.text()
 
         if csv_path == "":
-            QMessageBox.critical(self, "Error", f"Not CSV file has been selected")
+            QMessageBox.critical(self, "Error", f"No CSV file has been selected")
             return
         elif self.csv_editor is not None and self.csv_editor.isVisible():
             QMessageBox.critical(self, "Error", f"CSV editor window is already opened")
@@ -701,6 +713,17 @@ class NiaARMGUI(QMainWindow):
         self.csv_editor = CsvEditorWindow(csv_path=csv_path)
         self.csv_editor.show()
         self.statusBar().showMessage(f"NiaARM GUI v1.0")
+
+    def __show_dataset_info(self):
+        csv_path = self.csv_input.text()
+        if not csv_path:
+            QMessageBox.critical(self, "Error", "No CSV file has been selected")
+            return
+        try:
+            dialog = DatasetInfoDialog(csv_path, parent=self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to read dataset:\n{str(e)}")
 
     def __detect_csv_delimiter(self, file_path):
         """

@@ -1,3 +1,5 @@
+import os
+import pandas as pd
 from PyQt6.QtCore import Qt, QTimer, QLocale
 from PyQt6.QtGui import QDoubleValidator, QMovie
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QComboBox, QCheckBox, QPushButton, QMessageBox, \
@@ -164,6 +166,164 @@ class ProgressDialog(QProgressDialog):
                 background-color: #5a6268;
             }
         """)
+
+
+class DatasetInfoDialog(QDialog):
+    """Dialog for displaying dataset statistics"""
+
+    def __init__(self, csv_path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Dataset Info — {os.path.basename(csv_path)}")
+        self.setGeometry(100, 80, 700, 600)
+        self.setStyleSheet("background-color: #f5f6fa;")
+
+        df = pd.read_csv(csv_path)
+
+        numerical_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        categorical_cols = df.select_dtypes(include=["object"]).columns.tolist()
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+
+        title_label = QLabel(f"Dataset — {os.path.basename(csv_path)}")
+        title_label.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+            padding: 10px;
+        """)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(title_label)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("border: none;")
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setSpacing(15)
+
+        # === Overview card ===
+        overview_card = self.__create_card("Overview", [
+            ("Rows", str(len(df))),
+            ("Total attributes", str(len(df.columns))),
+            ("Numerical attributes", str(len(numerical_cols))),
+            ("Categorical attributes", str(len(categorical_cols)))
+        ], "#3498db")
+        scroll_layout.addWidget(overview_card)
+
+        # === Numerical attributes card ===
+        if numerical_cols:
+            num_data = []
+            for col in numerical_cols:
+                min_val = round(df[col].min(), 4)
+                max_val = round(df[col].max(), 4)
+                num_data.append((col, f"min = {min_val}\nmax = {max_val}"))
+            num_card = self.__create_card("Numerical Attributes", num_data, "#2ecc71", True)
+            scroll_layout.addWidget(num_card)
+
+        # === Categorical attributes card ===
+        if categorical_cols:
+            cat_data = []
+            for col in categorical_cols:
+                categories = df[col].dropna().unique().tolist()
+                if len(categories) > 10:
+                    display = ", ".join(str(c) for c in categories[:10]) + ", ..."
+                else:
+                    display = ", ".join(str(c) for c in categories)
+                cat_data.append((col, display))
+            cat_card = self.__create_card(
+                "Categorical Attributes", cat_data, "#e74c3c", True)
+            scroll_layout.addWidget(cat_card)
+
+        scroll_layout.addStretch()
+        scroll_area.setWidget(scroll_widget)
+        main_layout.addWidget(scroll_area)
+
+        close_btn = QPushButton("Close")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #34495e;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton:hover { background-color: #2c3e50; }
+        """)
+        close_btn.setFixedHeight(40)
+        close_btn.clicked.connect(self.close)
+        main_layout.addWidget(close_btn)
+
+    def __create_card(self, title, data_pairs, accent_color, multiline=False):
+        card = QFrame()
+        card.setFrameShape(QFrame.Shape.StyledPanel)
+        card.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 10px;
+                border: 1px solid #dfe6e9;
+            }
+        """)
+
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(10)
+        card_layout.setContentsMargins(20, 15, 20, 15)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet(f"""
+            font-size: 16px;
+            font-weight: bold;
+            color: {accent_color};
+            padding-bottom: 5px;
+            border-bottom: 2px solid {accent_color};
+        """)
+        card_layout.addWidget(title_label)
+
+        data_widget = QWidget()
+        data_layout = QVBoxLayout(data_widget)
+        data_layout.setSpacing(8)
+        data_layout.setContentsMargins(0, 10, 0, 0)
+
+        for label_text, value_text in data_pairs:
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+            label = QLabel(label_text + ":")
+            label.setStyleSheet("""
+                font-weight: bold;
+                color: #2c3e50;
+                font-size: 13px;
+            """)
+            label.setFixedWidth(200)
+            label.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+            value = QLabel(value_text)
+            value.setStyleSheet("""
+                color: #34495e;
+                font-size: 13px;
+                font-family: monospace;
+                background-color: #f8f9fa;
+            """)
+            value.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse)
+            value.setWordWrap(multiline)
+            value.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+            value.setFixedWidth(350)
+
+            row_layout.addWidget(label)
+            row_layout.addWidget(value)
+            row_layout.addStretch()
+            data_layout.addWidget(row_widget)
+
+        card_layout.addWidget(data_widget)
+        return card
 
 
 class MetricSelectionDialog(QDialog):

@@ -1,5 +1,4 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QPushButton, QHBoxLayout, QScrollArea, QWidget, QMessageBox, QTableWidget,
     QTableWidgetItem, QFrame, QGroupBox, QGridLayout, QCheckBox, QMainWindow, QFileDialog)
@@ -103,34 +102,31 @@ class MiningResultsViewer(QMainWindow):
         file_menu = menu_bar.addMenu("File")
 
         # Save action
-        save_action = QAction("Save", self)
+        save_action = file_menu.addAction("Save")
+        save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self.__save_file)
-        file_menu.addAction(save_action)
 
         # Save As action
-        save_as_action = QAction("Save As...", self)
+        save_as_action = file_menu.addAction("Save As...")
         save_as_action.triggered.connect(self.__save_file_as)
-        file_menu.addAction(save_as_action)
 
         # Export to Excel action
-        export_excel_action = QAction("Export to Excel", self)
+        export_excel_action = file_menu.addAction("Export to Excel")
         export_excel_action.triggered.connect(self.__export_to_excel)
-        file_menu.addAction(export_excel_action)
 
         file_menu.addSeparator()
 
         # Exit action
-        exit_action = QAction("Exit", self)
+        exit_action = file_menu.addAction("Exit")
+        exit_action.setShortcut("Ctrl+W")
         exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
 
         # Tools menu
         tools_menu = menu_bar.addMenu("Tools")
 
         # Filter rules action
-        filter_rules_action = QAction("Filter rules", self)
+        filter_rules_action = tools_menu.addAction("Filter rules")
         filter_rules_action.triggered.connect(self.__filter_rules)
-        tools_menu.addAction(filter_rules_action)
 
     def __create_status_bar(self):
         status_bar = self.statusBar()
