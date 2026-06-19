@@ -36,6 +36,11 @@ class LoadingDialog(QDialog):
         self.squash_info_label.setVisible(False)
         layout.addWidget(self.squash_info_label)
 
+        self.progress_info_label = QLabel("")
+        self.progress_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_info_label.setStyleSheet("font-size: 11px; color: #7f8c8d;")
+        layout.addWidget(self.progress_info_label)
+
         self.spinner = QLabel()
         self.movie = QMovie("niaarm_gui/resources/spinner.gif")
         self.spinner.setMovie(self.movie)

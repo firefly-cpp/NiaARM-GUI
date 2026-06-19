@@ -10,7 +10,7 @@ from niaarm.visualize import scatter_plot, grouped_matrix_plot, two_key_plot
 from niaarm_gui.antecedent_consequent_display import clean_rule_text
 from niaarm_gui.dialogs import (
     MetricSelectionDialog, KValueSelectionDialog, RuleDetailsDialog, FilterDialog, ProgressDialog)
-from niaarm_gui.models import NumericTableWidgetItem, LoadedRule
+from niaarm_gui.models import NumericTableWidgetItem, LoadedRule, CheckBox
 
 
 class MiningResultsViewer(QMainWindow):
@@ -190,17 +190,7 @@ class MiningResultsViewer(QMainWindow):
         ]
 
         for i, col in enumerate(columns):
-            checkbox = QCheckBox(col)
-            checkbox.setStyleSheet("""
-                QCheckBox {
-                    color: black;
-                }
-                QCheckBox::indicator:unchecked {
-                    border: 1px solid #95a5a6;
-                    background-color: white;
-                    border-radius: 3px;
-                }
-            """)
+            checkbox = CheckBox(col)
             if i < 5:
                 checkbox.setChecked(True)
 

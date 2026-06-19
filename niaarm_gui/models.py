@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIntValidator, QValidator
-from PyQt6.QtWidgets import QTableWidgetItem
+from PyQt6.QtWidgets import QTableWidgetItem, QCheckBox
 from niaarm import Rule
 
 
@@ -59,3 +59,17 @@ class StrictIntValidator(QIntValidator):
         if "." in input_str:
             return QValidator.State.Invalid, input_str, pos
         return super().validate(input_str, pos)
+
+
+class CheckBox(QCheckBox):
+    """QCheckBox with a consistent thin border style used across the application."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setStyleSheet("""
+            QCheckBox::indicator:unchecked {
+                background-color: white;
+                border: 1px solid #95a5a6;
+                border-radius: 3px;
+            }
+        """)

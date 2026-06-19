@@ -1,19 +1,24 @@
+import math
 import os
 import csv
 import json
+import time
 import pandas as pd
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit, QComboBox, QPushButton,
-    QFileDialog, QSlider, QCheckBox, QTableWidget, QTableWidgetItem, QScrollArea, QMessageBox, QFrame)
+    QFileDialog, QSlider, QTableWidget, QTableWidgetItem, QScrollArea, QMessageBox, QFrame)
 from PyQt6.QtCore import Qt, QEvent, QObject, QThread, pyqtSignal
-from niaarm import Dataset, get_rules, squash
+from niaarm import Dataset, squash, NiaARM
+from niapy.task import OptimizationType, Task
+from niapy.util.factory import get_algorithm
+from niapy.callbacks import Callback
 from niapy.algorithms.basic import (
     DifferentialEvolution, ParticleSwarmOptimization, GeneticAlgorithm, FireflyAlgorithm, BatAlgorithm)
 from niaarm_gui.csv_viewer import CsvEditorWindow
 from niaarm_gui.mining_results_viewer import MiningResultsViewer
 from niaarm_gui.dialogs import LoadingDialog, DatasetInfoDialog
-from niaarm_gui.models import StrictIntValidator
+from niaarm_gui.models import StrictIntValidator, CheckBox
 
 
 class NiaARMGUI(QMainWindow):
@@ -180,8 +185,7 @@ class NiaARMGUI(QMainWindow):
             self.metrics_table.setItem(i, 0, metric_item)
 
             # checkbox
-            check_box = QCheckBox()
-            check_box.setStyleSheet("QCheckBox { background-color: white; }")
+            check_box = CheckBox()
             center_widget = QWidget()
             center_layout = QHBoxLayout(center_widget)
             center_layout.addWidget(check_box)
@@ -252,18 +256,58 @@ class NiaARMGUI(QMainWindow):
 
         # Max Iterations
         max_iter_vbox = QVBoxLayout()
+        iter_header_hbox = QHBoxLayout()
+        iter_header_hbox.setSpacing(2)
+        iter_header_hbox.setContentsMargins(0, 0, 0, 0)
+        iter_header_hbox.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.max_iter_checkbox = CheckBox()
+        self.max_iter_checkbox.setChecked(True)
         iter_label = QLabel("Max Iterations:")
         iter_label.setStyleSheet(label_style_sheet)
-        max_iter_vbox.addWidget(iter_label)
+        iter_header_hbox.addWidget(self.max_iter_checkbox)
+        iter_header_hbox.addWidget(iter_label)
+        max_iter_vbox.addLayout(iter_header_hbox)
+
         self.max_iter_input = QLineEdit("100")
         self.max_iter_input.setValidator(StrictIntValidator(1, 1_000_000))
-        self.max_iter_input.setStyleSheet("background-color: white; color:black; border: 1px solid #bdc3c7; padding: 5px;")
-        max_iter_vbox.addWidget(self.max_iter_input)
+        self.max_iter_input.setStyleSheet(
+            "background-color: white; color: black; border: 1px solid #bdc3c7; padding: 5px;")
         self.max_iter_input.setToolTip("Maximum number of generations (recommended: 50-200)")
+        max_iter_vbox.addWidget(self.max_iter_input)
+
+        self.max_iter_checkbox.toggled.connect(self.max_iter_input.setEnabled)
+
+        # Max Evaluations
+        max_evals_vbox = QVBoxLayout()
+        evals_header_hbox = QHBoxLayout()
+        evals_header_hbox.setSpacing(2)
+        evals_header_hbox.setContentsMargins(0, 0, 0, 0)
+        evals_header_hbox.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.max_evals_checkbox = CheckBox()
+        self.max_evals_checkbox.setChecked(False)
+        evals_label = QLabel("Max Evaluations:")
+        evals_label.setStyleSheet(label_style_sheet)
+        evals_header_hbox.addWidget(self.max_evals_checkbox)
+        evals_header_hbox.addWidget(evals_label)
+        max_evals_vbox.addLayout(evals_header_hbox)
+
+        self.max_evals_input = QLineEdit("10000")
+        self.max_evals_input.setValidator(StrictIntValidator(1, 100_000_000))
+        self.max_evals_input.setEnabled(False)
+        self.max_evals_input.setStyleSheet(
+            "background-color: white; color: black; border: 1px solid #bdc3c7; padding: 5px;")
+        self.max_evals_input.setToolTip(
+            "Maximum number of fitness function evaluations (nFES)\n"
+            "Useful for comparing algorithms fairly, since algorithms\n"
+            "may use a different number of evaluations per iteration")
+        max_evals_vbox.addWidget(self.max_evals_input)
+
+        self.max_evals_checkbox.toggled.connect(self.max_evals_input.setEnabled)
 
         algo_hbox.addLayout(algorithm_vbox)
         algo_hbox.addLayout(pop_size_vbox)
         algo_hbox.addLayout(max_iter_vbox)
+        algo_hbox.addLayout(max_evals_vbox)
         algo_vbox.addLayout(algo_hbox)
 
         # Differential Evolution Parameters
@@ -588,16 +632,8 @@ class NiaARMGUI(QMainWindow):
 
         self.statusBar().showMessage(f"NiaARM GUI v1.0")
 
-    def __export_pipeline(self):
-        """Exports current mining configuration to a JSON file"""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Mining Pipeline", "", "JSON Files (*.json);;All Files (*)")
-
-        if not file_path:
-            return
-        if not file_path.endswith(".json"):
-            file_path += ".json"
-
+    def __export_pipeline_to_path(self, file_path: str):
+        """Builds the pipeline configuration dict and writes it to a JSON file."""
         algo_name = self.algorithm_combo.currentText()
 
         algo_params = {}
@@ -656,21 +692,106 @@ class NiaARMGUI(QMainWindow):
             "algorithm": {
                 "name": algo_name,
                 "population_size": int(self.pop_size_input.text()),
-                "max_iterations": int(self.max_iter_input.text()),
+                "max_iterations": int(self.max_iter_input.text()) if self.max_iter_checkbox.isChecked() else None,
+                "max_evaluations": int(self.max_evals_input.text()) if self.max_evals_checkbox.isChecked() else None,
                 "parameters": algo_params
             }
         }
 
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(pipeline, f, indent=4)
+
+    def __export_pipeline(self):
+        """Opens a save dialog and exports the current configuration to JSON."""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Mining Pipeline", "", "JSON Files (*.json);;All Files (*)")
+
+        if not file_path:
+            return
+        if not file_path.endswith(".json"):
+            file_path += ".json"
+
         try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(pipeline, f, indent=4)
+            self.__export_pipeline_to_path(file_path)
             self.statusBar().showMessage(f"Pipeline exported: {file_path}", 5000)
             QMessageBox.information(self, "Success", f"Pipeline saved to:\n{file_path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export pipeline:\n{str(e)}")
 
+    def __import_pipeline_from_path(self, file_path: str):
+        """Reads a JSON pipeline file and applies its configuration to the UI."""
+        with open(file_path, "r", encoding="utf-8") as f:
+            pipeline = json.load(f)
+
+        # Dataset
+        csv_path = pipeline.get("dataset", {}).get("path", "")
+        if csv_path and os.path.exists(csv_path):
+            self.csv_input.setText(csv_path)
+        elif csv_path:
+            QMessageBox.warning(
+                self, "Warning",
+                f"Dataset file not found:\n{csv_path}\n\n"
+                "All other settings have been applied."
+            )
+
+        # Data squashing
+        ds = pipeline.get("data_squashing", {})
+        self.data_squash_combo.setCurrentText("Yes" if ds.get("enabled") else "No")
+        self.similarity_combo.setCurrentText(ds.get("similarity", "Euclidean"))
+        threshold = ds.get("threshold", 0.5)
+        pos = self.__threshold_to_slider(threshold)
+        self.ds_threshold_slider.setValue(pos)
+
+        # Metrics
+        for metric, values in pipeline.get("metrics", {}).items():
+            if metric in self.metric_sliders:
+                check, slider, _ = self.metric_sliders[metric]
+                check.setChecked(values.get("enabled", False))
+                slider.setValue(int(values.get("weight", 0.5) * 100))
+
+        # Algorithm
+        algo = pipeline.get("algorithm", {})
+        self.algorithm_combo.setCurrentText(algo.get("name", "Select Algorithm"))
+        self.pop_size_input.setText(str(algo.get("population_size", 50)))
+        max_iterations = algo.get("max_iterations")
+        max_evaluations = algo.get("max_evaluations")
+
+        self.max_iter_checkbox.setChecked(max_iterations is not None)
+        self.max_iter_input.setText(str(max_iterations if max_iterations is not None else 100))
+
+        self.max_evals_checkbox.setChecked(max_evaluations is not None)
+        self.max_evals_input.setText(str(max_evaluations if max_evaluations is not None else 10000))
+
+        params = algo.get("parameters", {})
+        algo_name = algo.get("name", "")
+
+        if algo_name == "Differential Evolution":
+            self.diff_slider.setValue(int(params.get("differential_weight", 0.5) * 100))
+            self.crossover_slider.setValue(int(params.get("crossover_probability", 0.9) * 100))
+        elif algo_name == "Particle Swarm Optimization":
+            self.c1_slider.setValue(int(params.get("c1", 2.0) * 100))
+            self.c2_slider.setValue(int(params.get("c2", 2.0) * 100))
+            self.w_slider.setValue(int(params.get("w", 0.7) * 100))
+            self.min_velocity_slider.setValue(int(params.get("min_velocity", -1.5) * 100))
+            self.max_velocity_slider.setValue(int(params.get("max_velocity", 1.5) * 100))
+        elif algo_name == "Genetic Algorithm":
+            self.ga_crossover_slider.setValue(int(params.get("crossover_rate", 0.25) * 100))
+            self.ga_mutation_slider.setValue(int(params.get("mutation_rate", 0.25) * 100))
+        elif algo_name == "Bat Algorithm":
+            self.loud_slider.setValue(int(params.get("loudness", 1.0) * 100))
+            self.pulse_slider.setValue(int(params.get("pulse_rate", 1.0) * 100))
+            self.ba_alpha_slider.setValue(int(params.get("alpha", 0.97) * 100))
+            self.ba_gamma_slider.setValue(int(params.get("gamma", 0.1) * 100))
+            self.fmin_slider.setValue(int(params.get("min_frequency", 0.0) * 100))
+            self.fmax_slider.setValue(int(params.get("max_frequency", 2.0) * 100))
+        elif algo_name == "Firefly Algorithm":
+            self.fa_alpha_slider.setValue(int(params.get("alpha", 1.0) * 100))
+            self.beta_slider.setValue(int(params.get("beta0", 1.0) * 100))
+            self.fa_gamma_slider.setValue(int(params.get("gamma", 0.01) * 100))
+            self.theta_slider.setValue(int(params.get("theta", 0.97) * 100))
+
     def __import_pipeline(self):
-        """Imports mining configuration from a JSON file"""
+        """Opens a load dialog and imports a mining pipeline from JSON."""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Import Mining Pipeline", "", "JSON Files (*.json);;All Files (*)")
 
@@ -678,71 +799,8 @@ class NiaARMGUI(QMainWindow):
             return
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                pipeline = json.load(f)
-
-            # Dataset
-            csv_path = pipeline.get("dataset", {}).get("path", "")
-            if csv_path and os.path.exists(csv_path):
-                self.csv_input.setText(csv_path)
-            elif csv_path:
-                QMessageBox.warning(
-                    self, "Warning",
-                    f"Dataset file not found:\n{csv_path}\n\n"
-                    "All other settings will be applied."
-                )
-
-            # Data squashing
-            ds = pipeline.get("data_squashing", {})
-            self.data_squash_combo.setCurrentText("Yes" if ds.get("enabled") else "No")
-            self.similarity_combo.setCurrentText(ds.get("similarity", "Euclidean"))
-            threshold = ds.get("threshold", 0.5)
-            pos = self.__threshold_to_slider(threshold)
-            self.ds_threshold_slider.setValue(pos)
-
-            # Metrics
-            for metric, values in pipeline.get("metrics", {}).items():
-                if metric in self.metric_sliders:
-                    check, slider, _ = self.metric_sliders[metric]
-                    check.setChecked(values.get("enabled", False))
-                    slider.setValue(int(values.get("weight", 0.5) * 100))
-
-            # Algorithm
-            algo = pipeline.get("algorithm", {})
-            self.algorithm_combo.setCurrentText(algo.get("name", "Select Algorithm"))
-            self.pop_size_input.setText(str(algo.get("population_size", 50)))
-            self.max_iter_input.setText(str(algo.get("max_iterations", 100)))
-
-            params = algo.get("parameters", {})
-            algo_name = algo.get("name", "")
-
-            if algo_name == "Differential Evolution":
-                self.diff_slider.setValue(int(params.get("differential_weight", 0.5) * 100))
-                self.crossover_slider.setValue(int(params.get("crossover_probability", 0.9) * 100))
-            elif algo_name == "Particle Swarm Optimization":
-                self.c1_slider.setValue(int(params.get("c1", 2.0) * 100))
-                self.c2_slider.setValue(int(params.get("c2", 2.0) * 100))
-                self.w_slider.setValue(int(params.get("w", 0.7) * 100))
-                self.min_velocity_slider.setValue(int(params.get("min_velocity", -1.5) * 100))
-                self.max_velocity_slider.setValue(int(params.get("max_velocity", 1.5) * 100))
-            elif algo_name == "Genetic Algorithm":
-                self.ga_crossover_slider.setValue(int(params.get("crossover_rate", 0.25) * 100))
-                self.ga_mutation_slider.setValue(int(params.get("mutation_rate", 0.25) * 100))
-            elif algo_name == "Bat Algorithm":
-                self.loud_slider.setValue(int(params.get("loudness", 1.0) * 100))
-                self.pulse_slider.setValue(int(params.get("pulse_rate", 1.0) * 100))
-                self.ba_alpha_slider.setValue(int(params.get("alpha", 0.97) * 100))
-                self.ba_gamma_slider.setValue(int(params.get("gamma", 0.1) * 100))
-                self.fmin_slider.setValue(int(params.get("min_frequency", 0.0) * 100))
-                self.fmax_slider.setValue(int(params.get("max_frequency", 2.0) * 100))
-            elif algo_name == "Firefly Algorithm":
-                self.fa_alpha_slider.setValue(int(params.get("alpha", 1.0) * 100))
-                self.beta_slider.setValue(int(params.get("beta0", 1.0) * 100))
-                self.fa_gamma_slider.setValue(int(params.get("gamma", 0.01) * 100))
-                self.theta_slider.setValue(int(params.get("theta", 0.97) * 100))
-
+            self.__import_pipeline_from_path(file_path)
             self.statusBar().showMessage(f"Pipeline imported: {file_path}", 5000)
-
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to import pipeline:\n{str(e)}")
 
@@ -1172,6 +1230,11 @@ class NiaARMGUI(QMainWindow):
 
     def __run_mining(self):
         """Executes numerical association rule mining on selected dataset"""
+        if hasattr(self, 'mining_thread') and self.mining_thread.isRunning():
+            QMessageBox.warning(self, "Warning",
+                "A mining process is still finishing in the background. Please wait.")
+            return
+
         if not os.path.exists(self.csv_input.text()):
             QMessageBox.critical(self, "Error", f"CSV file not found")
             return
@@ -1179,9 +1242,16 @@ class NiaARMGUI(QMainWindow):
         data = Dataset(self.csv_input.text())
         metrics = self.__get_selected_metrics()
         algo = self.__get_selected_algorithm()
-        max_iter = int(self.max_iter_input.text())
+        if not self.max_iter_checkbox.isChecked() and not self.max_evals_checkbox.isChecked():
+            QMessageBox.critical(self, "Error",
+                "At least one stopping criterion (Iterations or Function Evaluations) must be selected."
+            )
+            return
 
-        if data is None or algo is None or len(metrics) < 1 or max_iter < 1:
+        max_iter = int(self.max_iter_input.text()) if self.max_iter_checkbox.isChecked() else math.inf
+        max_eval = int(self.max_evals_input.text()) if self.max_evals_checkbox.isChecked() else math.inf
+
+        if data is None or algo is None or len(metrics) < 1:
             QMessageBox.critical(self, "Error", f"Not all parameters have been selected")
             return
 
@@ -1195,10 +1265,15 @@ class NiaARMGUI(QMainWindow):
             squash_threshold = float(self.ds_threshold_value_label.text())
             squash_similarity = self.similarity_combo.currentText().lower()
 
-        self.mining_thread = MiningThread(data, algo, metrics, max_iter, squash_threshold, squash_similarity)
+        self.mining_thread = MiningThread(data, algo, metrics, max_iter, max_eval, squash_threshold, squash_similarity)
 
         self.mining_thread.progress_update.connect(loading_dialog.set_text)
         self.mining_thread.squash_completed.connect(loading_dialog.set_squash_info)
+        self.mining_thread.iteration_progress.connect(
+            lambda i, mi, e, me: loading_dialog.progress_info_label.setText(
+                f"Iteration {i} / {mi}" if mi != -1 else f"Function evaluations: {e} / {me}"
+            )
+        )
         self.mining_thread.finished.connect(
             lambda rules, run_time: self.__on_mining_finished(rules, run_time, loading_dialog))
         self.mining_thread.error.connect(lambda err: self.__on_mining_error(err, loading_dialog))
@@ -1227,25 +1302,26 @@ class NiaARMGUI(QMainWindow):
         """Calls when user cancels mining"""
         if hasattr(self, 'mining_thread') and self.mining_thread.isRunning():
             self.mining_thread.cancel()
-            if not self.mining_thread.wait(2000):
-                self.mining_thread.terminate()
             loading_dialog.close()
-            self.statusBar().showMessage("Mining cancelled by user", 3000)
+            self.statusBar().showMessage(
+                "Cancelling... mining will stop once the current step finishes", 5000)
 
 
 class MiningThread(QThread):
     """Thread for mining, does not conflict with UI"""
     progress_update = pyqtSignal(str)
     squash_completed = pyqtSignal(int, int)
+    iteration_progress = pyqtSignal(int, int, int, int)
     finished = pyqtSignal(object, float)
     error = pyqtSignal(str)
 
-    def __init__(self, data, algo, metrics, max_iter, squash_threshold=None, squash_similarity=None):
+    def __init__(self, data, algo, metrics, max_iter, max_eval, squash_threshold=None, squash_similarity=None):
         super().__init__()
         self.data = data
         self.algo = algo
         self.metrics = metrics
         self.max_iter = max_iter
+        self.max_eval = max_eval
         self.squash_threshold = squash_threshold
         self.squash_similarity = squash_similarity
         self._is_cancelled = False
@@ -1269,19 +1345,60 @@ class MiningThread(QThread):
 
             self.progress_update.emit("Mining in progress...")
 
-            rules, run_time = get_rules(
-                self.data,
-                algorithm=self.algo,
-                metrics=self.metrics,
+            problem = NiaARM(
+                self.data.dimension, self.data.features, self.data.transactions,
+                self.metrics, logging=True
+            )
+            task = Task(
+                problem,
+                max_evals=self.max_eval,
                 max_iters=self.max_iter,
-                logging=True
+                optimization_type=OptimizationType.MAXIMIZATION
             )
 
-            if self._is_cancelled:
+            algorithm = self.algo
+            if isinstance(algorithm, str):
+                algorithm = get_algorithm(algorithm)
+
+            algorithm.callbacks = ProgressCallback(self, task)
+
+            start_time = time.perf_counter()
+            xb, fxb = algorithm.run(task)
+            stop_time = time.perf_counter()
+
+            # algorithm.run() returns (None, None) on cancellation or exception
+            if xb is None or self._is_cancelled:
                 self.error.emit("Mining cancelled by user")
                 return
 
-            self.finished.emit(rules, run_time)
+            run_time = stop_time - start_time
+            problem.rules.sort()
+
+            self.finished.emit(problem.rules, run_time)
         except Exception as e:
             if not self._is_cancelled:
                 self.error.emit(str(e))
+
+
+class ProgressCallback(Callback):
+    """Reports the current iteration and evaluation count via a Qt signal."""
+    def __init__(self, mining_thread, task):
+        super().__init__()
+        self.mining_thread = mining_thread
+        self._task = task
+
+    def before_iteration(self, population, fitness, best_x, best_fitness, **params):
+        super().before_iteration(population, fitness, best_x, best_fitness, **params)
+        if self.mining_thread._is_cancelled:
+            raise InterruptedError("Mining cancelled by user")
+
+    def after_iteration(self, population, fitness, best_x, best_fitness, **params):
+        super().after_iteration(population, fitness, best_x, best_fitness, **params)
+        max_iters = self._task.max_iters
+        max_evals = self._task.max_evals
+        self.mining_thread.iteration_progress.emit(
+            self._task.iters,
+            -1 if max_iters == math.inf else int(max_iters),
+            self._task.evals,
+            -1 if max_evals == math.inf else int(max_evals)
+        )
