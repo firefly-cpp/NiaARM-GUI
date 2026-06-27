@@ -1,0 +1,55 @@
+{
+    "version": "1.0",
+    "dataset": {
+        "path": ""
+    },
+    "data_squashing": {
+        "enabled": false,
+        "similarity": "Euclidean",
+        "threshold": 0.5
+    },
+    "metrics": {
+        "Support": {
+            "enabled": false,
+            "weight": 0.5
+        },
+        "Confidence": {
+            "enabled": false,
+            "weight": 0.5
+        },
+        "Coverage": {
+            "enabled": false,
+            "weight": 0.5
+        },
+        "Interestingness": {
+            "enabled": false,
+            "weight": 0.5
+        },
+        "Comprehensibility": {
+            "enabled": false,
+            "weight": 0.5
+        },
+        "Amplitude": {
+            "enabled": false,
+            "weight": 0.5
+        },
+        "Inclusion": {
+            "enabled": false,
+            "weight": 0.5
+        },
+        "RHS Support": {
+            "enabled": false,
+            "weight": 0.5
+        }
+    },
+    "algorithm": {
+        "name": "Genetic Algorithm",
+        "population_size": 30,
+        "max_iterations": 60,
+        "max_evaluations": null,
+        "parameters": {
+            "crossover_rate": 0.7,
+            "mutation_rate": 0.1
+        }
+    }
+}

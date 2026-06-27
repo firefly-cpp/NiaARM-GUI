@@ -414,7 +414,7 @@ class MiningResultsViewer(QMainWindow):
 
     def __filter_rules(self):
         """Filters rules in the table with metrics thresholds selected in FilterDialog"""
-        if self.rules is None:
+        if self.rules is None or len(self.rules) < 1:
             QMessageBox.warning(self, "Warning", "No rules to filter!")
             return
 
