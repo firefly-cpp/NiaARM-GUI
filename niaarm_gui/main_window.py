@@ -619,7 +619,7 @@ class NiaARMGUI(QMainWindow):
 
         for results_viewer in self.mining_results_viewer_list:
             if results_viewer.file_path == file_name and results_viewer.isVisible():
-                QMessageBox.critical(self, "Error", f"The file {file_name} is already opened.")
+                QMessageBox.warning(self, "Warning", f"The file {file_name} is already opened.")
                 return
 
         self.statusBar().showMessage(f"Opening {os.path.basename(file_name)}...")
@@ -848,8 +848,8 @@ class NiaARMGUI(QMainWindow):
     def __select_csv(self):
         """Gets CSV file containing a dataset"""
         if self.csv_editor is not None and self.csv_editor.isVisible():
-            QMessageBox.critical(self,
-                "Error",
+            QMessageBox.warning(self,
+                "Warning",
                 "CSV editor window is still opened.\nPlease close the window before changing CSV dataset."
             )
             return
@@ -860,6 +860,19 @@ class NiaARMGUI(QMainWindow):
 
         if not file_name:
             return
+
+        try:
+            df_check = pd.read_csv(file_name, nrows=1)
+            if df_check.empty:
+                QMessageBox.warning(self, "Warning",
+                                    "The selected CSV file is empty.\nPlease select a valid dataset.")
+                return
+        except pd.errors.EmptyDataError:
+            QMessageBox.warning(self, "Warning",
+                                "The selected CSV file is empty.\nPlease select a valid dataset.")
+            return
+        except Exception:
+            pass
 
         delimiter = self.__detect_csv_delimiter(file_name)
 
@@ -924,10 +937,10 @@ class NiaARMGUI(QMainWindow):
         csv_path = self.csv_input.text()
 
         if csv_path == "":
-            QMessageBox.critical(self, "Error", f"No CSV file has been selected")
+            QMessageBox.warning(self, "Warning", f"No CSV file has been selected")
             return
         elif self.csv_editor is not None and self.csv_editor.isVisible():
-            QMessageBox.critical(self, "Error", f"CSV editor window is already opened")
+            QMessageBox.warning(self, "Warning", f"CSV editor window is already opened")
             return
 
         file_name = os.path.basename(csv_path)
@@ -941,7 +954,7 @@ class NiaARMGUI(QMainWindow):
     def __show_dataset_info(self):
         csv_path = self.csv_input.text()
         if not csv_path:
-            QMessageBox.critical(self, "Error", "No CSV file has been selected")
+            QMessageBox.warning(self, "Warning", "No CSV file has been selected")
             return
         try:
             dialog = DatasetInfoDialog(csv_path, parent=self)
@@ -1243,7 +1256,7 @@ class NiaARMGUI(QMainWindow):
         metrics = self.__get_selected_metrics()
         algo = self.__get_selected_algorithm()
         if not self.max_iter_checkbox.isChecked() and not self.max_evals_checkbox.isChecked():
-            QMessageBox.critical(self, "Error",
+            QMessageBox.warning(self, "Warning",
                 "At least one stopping criterion (Iterations or Function Evaluations) must be selected."
             )
             return
@@ -1252,7 +1265,7 @@ class NiaARMGUI(QMainWindow):
         max_eval = int(self.max_evals_input.text()) if self.max_evals_checkbox.isChecked() else math.inf
 
         if data is None or algo is None or len(metrics) < 1:
-            QMessageBox.critical(self, "Error", f"Not all parameters have been selected")
+            QMessageBox.warning(self, "Warning", f"Not all parameters have been selected")
             return
 
         loading_dialog = LoadingDialog("Starting process...", self)
