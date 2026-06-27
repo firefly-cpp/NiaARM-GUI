@@ -1,0 +1,18 @@
+{
+    "version": "1.0",
+    "dataset": {
+        "path": "C:/nonexistent/path/dataset.csv"
+    },
+    "data_squashing": {
+        "enabled": false,
+        "similarity": "Euclidean",
+        "threshold": 0.5
+    },
+    "metrics": {},
+    "algorithm": {
+        "name": "Select Algorithm",
+        "population_size": 50,
+        "max_iterations": 100,
+        "parameters": {}
+    }
+}
