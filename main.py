@@ -1,19 +1,8 @@
 """
-Main entry point for NiaARM GUI application.
+Convenience launcher for running from a source checkout without installing.
 """
 
-import sys
-from PyQt6.QtWidgets import QApplication
-from niaarm_gui.main_window import NiaARMGUI
-
-
-def main():
-    """Launch the NiaARM GUI application."""
-    app = QApplication(sys.argv)
-    window = NiaARMGUI()
-    window.showMaximized()
-    sys.exit(app.exec())
-
+from niaarm_gui.main import main
 
 if __name__ == "__main__":
     main()
